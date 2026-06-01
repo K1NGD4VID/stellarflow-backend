@@ -8,7 +8,7 @@ import {
   failedSubmissions,
   gasUsagePerAsset,
   submissionDuration,
-} from "../metrics";
+} from "../middleware/metrics";
 
 dotenv.config();
 
@@ -47,8 +47,8 @@ type RemoteSignatureResponse = {
 export class MultiSigService {
   private localSignerPublicKey: string = "";
   private readonly signerName: string;
-  private readonly SIGNATURE_EXPIRY_MS = 60 * 60 * 1000;
-  private readonly REQUIRED_SIGNATURES: number;
+  private readonly signatureExpiryMs = 60 * 60 * 1000;
+  private readonly requiredSignatures: number;
 
   constructor() {
     this.signerName = process.env.ORACLE_SIGNER_NAME || "oracle-server";
@@ -57,7 +57,7 @@ export class MultiSigService {
       process.env.MULTI_SIG_REQUIRED_COUNT || "2",
       10,
     );
-    this.REQUIRED_SIGNATURES =
+    this.requiredSignatures =
       Number.isFinite(requiredSignatures) && requiredSignatures > 0
         ? requiredSignatures
         : 2;
@@ -76,7 +76,7 @@ export class MultiSigService {
     source: string,
     memoId: string,
   ): Promise<SignatureRequest> {
-    const expiresAt = new Date(Date.now() + this.SIGNATURE_EXPIRY_MS);
+    const expiresAt = new Date(Date.now() + this.signatureExpiryMs);
 
     const created = await prisma.multiSigPrice.create({
       data: {
@@ -86,7 +86,7 @@ export class MultiSigService {
         source,
         memoId,
         status: "PENDING",
-        requiredSignatures: this.REQUIRED_SIGNATURES,
+        requiredSignatures: this.requiredSignatures,
         collectedSignatures: 0,
         expiresAt,
       },
@@ -102,7 +102,7 @@ export class MultiSigService {
       rate,
       source,
       memoId,
-      requiredSignatures: this.REQUIRED_SIGNATURES,
+      requiredSignatures: this.requiredSignatures,
     };
   }
 
@@ -343,8 +343,8 @@ export class MultiSigService {
     multiSigPriceId: number,
     memoId: string,
     stellarTxHash: string,
-    asset?: string,       // optional — caller can pass e.g. "XLM/USD"
-    feeStroops?: number,  // optional — pass tx.fee_charged if available
+    asset?: string, // optional — caller can pass e.g. "XLM/USD"
+    feeStroops?: number, // optional — pass tx.fee_charged if available
   ): Promise<void> {
     // Resolve the asset label from DB if not supplied by caller
     const label = asset ?? (await this.resolveCurrency(multiSigPriceId));

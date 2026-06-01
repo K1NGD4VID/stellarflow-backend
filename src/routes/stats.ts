@@ -17,28 +17,30 @@ const router = Router();
 router.get("/relayers", async (req: Request, res: Response) => {
   try {
     // Get all unique signers/relayers
-    const signers = (await prisma.multiSigSignature.groupBy({
-      by: ["signerPublicKey", "signerName"],
-      _count: {
-        id: true,
-      },
-    })) || [];
+    const signers =
+      (await prisma.multiSigSignature.groupBy({
+        by: ["signerPublicKey", "signerName"],
+        _count: {
+          id: true,
+        },
+      })) || [];
 
     // Get all submitted multi-sig prices
-    const submittedPrices = (await prisma.multiSigPrice.findMany({
-      where: {
-        status: "APPROVED",
-        submittedAt: { not: null },
-      },
-      include: {
-        multiSigSignatures: {
-          select: {
-            signerPublicKey: true,
-            signedAt: true,
+    const submittedPrices =
+      (await prisma.multiSigPrice.findMany({
+        where: {
+          status: "APPROVED",
+          submittedAt: { not: null },
+        },
+        include: {
+          multiSigSignatures: {
+            select: {
+              signerPublicKey: true,
+              signedAt: true,
+            },
           },
         },
-      },
-    })) || [];
+      })) || [];
 
     // Calculate statistics for each relayer
     const relayerStats = await Promise.all(
@@ -51,21 +53,22 @@ router.get("/relayers", async (req: Request, res: Response) => {
           const { signerPublicKey, signerName, _count } = signer;
 
           // Get all signatures by this relayer
-          const signatures = (await prisma.multiSigSignature.findMany({
-            where: { signerPublicKey },
-            include: {
-              multiSigPrice: {
-                select: {
-                  requestedAt: true,
-                  submittedAt: true,
-                  status: true,
+          const signatures =
+            (await prisma.multiSigSignature.findMany({
+              where: { signerPublicKey },
+              include: {
+                multiSigPrice: {
+                  select: {
+                    requestedAt: true,
+                    submittedAt: true,
+                    status: true,
+                  },
                 },
               },
-            },
-            orderBy: {
-              signedAt: "desc",
-            },
-          })) || [];
+              orderBy: {
+                signedAt: "desc",
+              },
+            })) || [];
 
           // Calculate successful pushes (prices that were submitted to Stellar)
           const successfulPushes = signatures.filter(
@@ -154,7 +157,7 @@ router.get(
       const dateParam = req.query.date as string;
       const targetDate = dateParam ? new Date(dateParam) : new Date();
       const dateStr = targetDate.toISOString().split("T")[0];
-      return CACHE_KEYS.stats.volume(dateStr);
+      return CACHE_KEYS.stats.volume(dateStr || "");
     },
   }),
   async (req, res) => {
@@ -166,7 +169,12 @@ router.get(
 
       // Validate date
       if (isNaN(targetDate.getTime())) {
-        sendApiError(res, 400, "BAD_REQUEST", "Invalid date format. Use YYYY-MM-DD format.");
+        sendApiError(
+          res,
+          400,
+          "BAD_REQUEST",
+          "Invalid date format. Use YYYY-MM-DD format.",
+        );
         return;
       }
 
@@ -198,16 +206,17 @@ router.get(
       });
 
       // Get provider requests for the day (from reputation service)
-      const providerStats = (await prisma.providerReputation.findMany({
-        select: {
-          providerName: true,
-          totalRequests: true,
-          successfulRequests: true,
-          failedRequests: true,
-          lastSuccess: true,
-          lastFailure: true,
-        },
-      })) || [];
+      const providerStats =
+        (await prisma.providerReputation.findMany({
+          select: {
+            providerName: true,
+            totalRequests: true,
+            successfulRequests: true,
+            failedRequests: true,
+            lastSuccess: true,
+            lastFailure: true,
+          },
+        })) || [];
 
       // Calculate total requests (this is cumulative, not daily)
       const totalApiRequests = providerStats.reduce(
@@ -224,32 +233,34 @@ router.get(
       );
 
       // Get unique currencies that had activity
-      const activeCurrencies = (await prisma.priceHistory.findMany({
-        where: {
-          timestamp: {
-            gte: startOfDay,
-            lte: endOfDay,
+      const activeCurrencies =
+        (await prisma.priceHistory.findMany({
+          where: {
+            timestamp: {
+              gte: startOfDay,
+              lte: endOfDay,
+            },
           },
-        },
-        select: {
-          currency: true,
-        },
-        distinct: ["currency"],
-      })) || [];
+          select: {
+            currency: true,
+          },
+          distinct: ["currency"],
+        })) || [];
 
       // Get unique data sources for the day
-      const activeSources = (await prisma.priceHistory.findMany({
-        where: {
-          timestamp: {
-            gte: startOfDay,
-            lte: endOfDay,
+      const activeSources =
+        (await prisma.priceHistory.findMany({
+          where: {
+            timestamp: {
+              gte: startOfDay,
+              lte: endOfDay,
+            },
           },
-        },
-        select: {
-          source: true,
-        },
-        distinct: ["source"],
-      })) || [];
+          select: {
+            source: true,
+          },
+          distinct: ["source"],
+        })) || [];
 
       const volumeStats = {
         date: targetDate.toISOString().split("T")[0],
@@ -295,7 +306,18 @@ router.get(
       });
     } catch (error) {
       console.error("Error fetching volume stats:", error);
-      sendApiError(res, 500, "INTERNAL_SERVER_ERROR", typeof (error instanceof Error ? error.message : "Internal server error") === "string" ? String(error instanceof Error ? error.message : "Internal server error") : undefined);
+      sendApiError(
+        res,
+        500,
+        "INTERNAL_SERVER_ERROR",
+        typeof (error instanceof Error
+          ? error.message
+          : "Internal server error") === "string"
+          ? String(
+              error instanceof Error ? error.message : "Internal server error",
+            )
+          : undefined,
+      );
     }
   },
 );

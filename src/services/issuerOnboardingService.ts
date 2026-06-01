@@ -23,7 +23,7 @@ export interface AdminDecisionInput {
   requestId: number;
   approve: boolean;
   reviewedBy: string;
-  reviewNote?: string;
+  reviewNote?: string | undefined;
 }
 
 /**
@@ -39,7 +39,9 @@ export async function submitIssuerApplication(input: IssuerApplicationInput) {
   });
 
   if (existing) {
-    throw new Error("A pending application already exists for this wallet address.");
+    throw new Error(
+      "A pending application already exists for this wallet address.",
+    );
   }
 
   const request = await prisma.issuerOnboardingRequest.create({
@@ -87,7 +89,9 @@ export async function processAdminDecision(input: AdminDecisionInput) {
 
   if (!request) throw new Error(`Onboarding request ${requestId} not found.`);
   if (request.status !== "PENDING") {
-    throw new Error(`Request ${requestId} has already been ${request.status.toLowerCase()}.`);
+    throw new Error(
+      `Request ${requestId} has already been ${request.status.toLowerCase()}.`,
+    );
   }
 
   const newStatus = approve ? "APPROVED" : "REJECTED";
@@ -121,7 +125,10 @@ export async function processAdminDecision(input: AdminDecisionInput) {
  * In a real deployment this would call the Soroban contract via StellarService.
  * Here we record the intent and mark the DB record accordingly.
  */
-async function addToContractAllowlist(requestId: number, walletAddress: string): Promise<void> {
+async function addToContractAllowlist(
+  requestId: number,
+  walletAddress: string,
+): Promise<void> {
   try {
     logger.info("[IssuerOnboarding] Adding wallet to contract allowlist", {
       requestId,

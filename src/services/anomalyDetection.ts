@@ -9,9 +9,9 @@ export interface AnomalyCheckResult {
 }
 
 export class AnomalyDetectionService {
-  private readonly HISTORY_LIMIT = 50;
-  private readonly MIN_SAMPLE_SIZE = 10;
-  private readonly Z_SCORE_THRESHOLD = 3;
+  private readonly historyLimit = 50;
+  private readonly minSampleSize = 10;
+  private readonly zScoreThreshold = 3;
 
   /**
    * Calculates the Z-score for a given price update based on historical data.
@@ -19,18 +19,18 @@ export class AnomalyDetectionService {
    */
   async checkAnomaly(
     currency: string,
-    currentRate: number
+    currentRate: number,
   ): Promise<AnomalyCheckResult> {
     const history = await prisma.priceHistory.findMany({
       where: { currency: currency.toUpperCase() },
       orderBy: { timestamp: "desc" },
-      take: this.HISTORY_LIMIT,
+      take: this.historyLimit,
     });
 
-    const rates = history.map((h) => Number(h.rate));
+    const rates = history.map((h: any) => Number(h.rate));
     const n = rates.length;
 
-    if (n < this.MIN_SAMPLE_SIZE) {
+    if (n < this.minSampleSize) {
       return {
         isAnomalous: false,
         zScore: 0,
@@ -40,9 +40,10 @@ export class AnomalyDetectionService {
       };
     }
 
-    const mean = rates.reduce((a, b) => a + b, 0) / n;
+    const mean = rates.reduce((a: number, b: number) => a + b, 0) / n;
     const variance =
-      rates.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n - 1);
+      rates.reduce((a: number, b: number) => a + Math.pow(b - mean, 2), 0) /
+      (n - 1);
     const stdDev = Math.sqrt(variance);
 
     // Handle edge case where stdDev is 0 (all historical rates are the same)
@@ -58,7 +59,7 @@ export class AnomalyDetectionService {
     }
 
     const zScore = (currentRate - mean) / stdDev;
-    const isAnomalous = Math.abs(zScore) > this.Z_SCORE_THRESHOLD;
+    const isAnomalous = Math.abs(zScore) > this.zScoreThreshold;
 
     return {
       isAnomalous,

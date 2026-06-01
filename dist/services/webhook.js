@@ -37,6 +37,13 @@ export class WebhookService {
         const message = this.formatMonitorFailureAlert(alertDetails);
         await this.postMessage(message);
     }
+    async sendPriorityAlert(alertDetails) {
+        if (!this.webhookUrl) {
+            return;
+        }
+        const message = this.formatPriorityAlert(alertDetails);
+        await this.postMessage(message);
+    }
     async postMessage(message) {
         if (!this.webhookUrl) {
             return;
@@ -339,6 +346,54 @@ export class WebhookService {
                         type: "mrkdwn",
                         text: "*Action Required:*\nInvestigate Stellar Horizon connectivity and verify environment variables.",
                     },
+                },
+                {
+                    type: "context",
+                    elements: [
+                        { type: "mrkdwn", text: `Detected at ${timestamp.toISOString()}` },
+                    ],
+                },
+            ],
+        };
+    }
+    formatPriorityAlert(alertDetails) {
+        const { currency, rate, zScore, mean, stdDev, timestamp } = alertDetails;
+        if (this.platform === "discord") {
+            return {
+                embeds: [
+                    {
+                        title: "🚨 Priority Alert: Price Anomaly Detected",
+                        color: 0xffa500,
+                        fields: [
+                            { name: "Currency", value: currency, inline: true },
+                            { name: "Current Rate", value: rate.toString(), inline: true },
+                            { name: "Z-Score", value: `${zScore.toFixed(2)}σ`, inline: true },
+                            { name: "Historical Mean", value: mean.toString(), inline: true },
+                            { name: "Std Dev", value: stdDev.toString(), inline: true },
+                            { name: "Time", value: timestamp.toISOString() },
+                        ],
+                    },
+                ],
+            };
+        }
+        return {
+            blocks: [
+                {
+                    type: "header",
+                    text: {
+                        type: "plain_text",
+                        text: "🚨 Priority Alert: Price Anomaly Detected",
+                    },
+                },
+                {
+                    type: "section",
+                    fields: [
+                        { type: "mrkdwn", text: `*Currency:*\n${currency}` },
+                        { type: "mrkdwn", text: `*Current Rate:*\n${rate}` },
+                        { type: "mrkdwn", text: `*Z-Score:*\n${zScore.toFixed(2)}σ` },
+                        { type: "mrkdwn", text: `*Historical Mean:*\n${mean}` },
+                        { type: "mrkdwn", text: `*Std Dev:*\n${stdDev}` },
+                    ],
                 },
                 {
                     type: "context",

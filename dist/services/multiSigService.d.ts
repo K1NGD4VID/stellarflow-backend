@@ -17,8 +17,8 @@ export interface SignaturePayload {
 export declare class MultiSigService {
     private localSignerPublicKey;
     private readonly signerName;
-    private readonly SIGNATURE_EXPIRY_MS;
-    private readonly REQUIRED_SIGNATURES;
+    private readonly signatureExpiryMs;
+    private readonly requiredSignatures;
     constructor();
     private initializeSigner;
     createMultiSigRequest(priceReviewId: number, currency: string, rate: number, source: string, memoId: string): Promise<SignatureRequest>;

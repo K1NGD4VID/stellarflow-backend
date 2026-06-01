@@ -5,13 +5,13 @@ import { getMaxLatencyMs } from "../utils/envValidator";
 
 /**
  * Latency validation middleware for relayer payloads.
- * 
+ *
  * Validates that incoming relayer payloads are not "stale" by checking
  * the timestamp difference between the payload and current time.
- * 
+ *
  * Expects payloads to have a `timestamp` field (ISO 8601 format).
  * If the timestamp_diff exceeds MAX_LATENCY_MS threshold, the request is rejected.
- * 
+ *
  * Latency violations are logged to the ComplianceMetadataStore for auditing.
  */
 export const latencyValidationMiddleware = async (
@@ -40,7 +40,7 @@ export const latencyValidationMiddleware = async (
   try {
     // Parse the payload timestamp
     const payloadTime = new Date(payloadTimestamp).getTime();
-    
+
     if (isNaN(payloadTime)) {
       console.error(
         `[LatencyGuard] Invalid timestamp format in relayer payload: ${payloadTimestamp}`,
@@ -54,8 +54,13 @@ export const latencyValidationMiddleware = async (
         maxLatencyMs,
         { error: "Invalid timestamp format" },
       );
-      
-      sendApiError(res, 400, "BAD_REQUEST", "Invalid timestamp format in payload");
+
+      sendApiError(
+        res,
+        400,
+        "BAD_REQUEST",
+        "Invalid timestamp format in payload",
+      );
       return;
     }
 
@@ -80,7 +85,7 @@ export const latencyValidationMiddleware = async (
         {
           endpoint: req.path,
           method: req.method,
-          bodyKeys: Object.keys(req.body).filter(k => k !== 'timestamp'),
+          bodyKeys: Object.keys(req.body).filter((k) => k !== "timestamp"),
         },
       );
 
@@ -105,7 +110,7 @@ export const latencyValidationMiddleware = async (
     next();
   } catch (error) {
     console.error("[LatencyGuard] Error during latency validation:", error);
-    
+
     // Log the error as a violation for auditing
     await logLatencyViolation(
       req.relayer.id,
@@ -117,7 +122,12 @@ export const latencyValidationMiddleware = async (
       { error: String(error) },
     );
 
-    sendApiError(res, 500, "INTERNAL_SERVER_ERROR", "Latency validation failed");
+    sendApiError(
+      res,
+      500,
+      "INTERNAL_SERVER_ERROR",
+      "Latency validation failed",
+    );
   }
 };
 
@@ -147,11 +157,16 @@ async function logLatencyViolation(
         resolved: false,
       },
     });
-    
-    console.info(`[LatencyGuard] Violation logged to ComplianceMetadataStore: ${eventType}`);
+
+    console.info(
+      `[LatencyGuard] Violation logged to ComplianceMetadataStore: ${eventType}`,
+    );
   } catch (error) {
     // Non-blocking: log error but don't fail the request
-    console.error("[LatencyGuard] Failed to log violation to ComplianceMetadataStore:", error);
+    console.error(
+      "[LatencyGuard] Failed to log violation to ComplianceMetadataStore:",
+      error,
+    );
   }
 }
 
@@ -165,11 +180,11 @@ export async function getRelayerComplianceHistory(
   limit: number = 100,
 ) {
   const where: any = {};
-  
+
   if (relayerName) {
     where.relayerName = relayerName;
   }
-  
+
   if (eventType) {
     where.eventType = eventType;
   }
@@ -207,9 +222,13 @@ export async function getRelayerLatencyStats(relayerName: string) {
   });
 
   // Calculate average latency of violations
-  const avgLatency = recentViolations.length > 0
-    ? recentViolations.reduce((sum, v) => sum + (v.latencyDiffMs || 0), 0) / recentViolations.length
-    : 0;
+  const avgLatency =
+    recentViolations.length > 0
+      ? recentViolations.reduce(
+          (sum: number, v: any) => sum + (v.latencyDiffMs || 0),
+          0,
+        ) / recentViolations.length
+      : 0;
 
   return {
     relayerName,

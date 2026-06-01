@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import dotenv from "dotenv";
 import { getStellarNetwork } from "../lib/stellarNetwork";
 import { WebhookService } from "./webhook";
+import { getSecretKey } from "./secretManager.js";
 
 dotenv.config();
 
@@ -21,231 +22,233 @@ const LAST_ALERT_TIME_PATH = "/tmp/gas_balance_last_alert_time.json";
  * Prevents running out of XLM for transaction fees by providing early warning.
  */
 export class GasBalanceMonitorService {
-    private isRunning: boolean = false;
-    private checkIntervalMs: number;
-    private timer: ReturnType<typeof setInterval> | null = null;
-    private server: Horizon.Server;
-    private adminKeypair: Keypair;
-    private webhookService: WebhookService;
-    private lastAlertTime: number = 0;
-    private readonly BALANCE_THRESHOLD_XLM: number;
-    private lastKnownBalance: number | null = null;
-    private consecutiveFailures: number = 0;
+  private isRunning: boolean = false;
+  private checkIntervalMs: number;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private server: Horizon.Server;
+  private adminKeypair: Keypair;
+  private webhookService: WebhookService;
+  private lastAlertTime: number = 0;
+  private readonly balanceThresholdXlm: number;
+  private lastKnownBalance: number | null = null;
+  private consecutiveFailures: number = 0;
 
-    constructor(checkIntervalMs: number = DEFAULT_CHECK_INTERVAL_MS) {
-        let secret: string;
-        try {
-            secret = getSecretKey();
-        } catch (err) {
-            // For KMS mode or if secret otherwise unavailable, this service cannot start
-            // unless we refactor it to use ISigner. For now, we support local secret only.
-            throw new Error(`GasBalanceMonitorService requires a local secret: ${err instanceof Error ? err.message : String(err)}`);
-        }
-
-        this.adminKeypair = Keypair.fromSecret(secret);
-        this.checkIntervalMs = checkIntervalMs;
-        this.webhookService = new WebhookService();
-
-        const network = getStellarNetwork();
-        const horizonUrl =
-            network === "PUBLIC"
-                ? "https://horizon.stellar.org"
-                : "https://horizon-testnet.stellar.org";
-
-        this.server = new Horizon.Server(horizonUrl);
-
-        // parseFloat returns NaN for non-numeric strings like "abc"; the fallback guards against that.
-        // The env var default "20" is a separate concern from the NaN fallback.
-        const parsedThreshold = parseFloat(
-            process.env.GAS_BALANCE_ALERT_THRESHOLD_XLM ?? "",
-        );
-        this.BALANCE_THRESHOLD_XLM = isNaN(parsedThreshold)
-            ? DEFAULT_BALANCE_THRESHOLD_XLM
-            : parsedThreshold;
+  constructor(checkIntervalMs: number = DEFAULT_CHECK_INTERVAL_MS) {
+    let secret: string;
+    try {
+      secret = getSecretKey();
+    } catch (err) {
+      // For KMS mode or if secret otherwise unavailable, this service cannot start
+      // unless we refactor it to use ISigner. For now, we support local secret only.
+      throw new Error(
+        `GasBalanceMonitorService requires a local secret: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
 
-    /**
-     * Start the background service.
-     */
-    async start(): Promise<void> {
-        if (this.isRunning) {
-            console.warn("[GasBalanceMonitor] Service is already running");
-            return;
-        }
+    this.adminKeypair = Keypair.fromSecret(secret);
+    this.checkIntervalMs = checkIntervalMs;
+    this.webhookService = new WebhookService();
 
-        // Restore persisted lastAlertTime so rate-limiting survives restarts
-        await this.loadLastAlertTime();
+    const network = getStellarNetwork();
+    const horizonUrl =
+      network === "PUBLIC"
+        ? "https://horizon.stellar.org"
+        : "https://horizon-testnet.stellar.org";
 
-        this.isRunning = true;
-        console.info(
-            `[GasBalanceMonitor] Started with ${this.checkIntervalMs}ms check interval (threshold: ${this.BALANCE_THRESHOLD_XLM} XLM)`,
-        );
+    this.server = new Horizon.Server(horizonUrl);
 
-        // Run immediately on start
-        await this.checkBalance().catch((err) => {
-            console.error("[GasBalanceMonitor] Initial check error:", err);
-        });
+    // parseFloat returns NaN for non-numeric strings like "abc"; the fallback guards against that.
+    // The env var default "20" is a separate concern from the NaN fallback.
+    const parsedThreshold = parseFloat(
+      process.env.GAS_BALANCE_ALERT_THRESHOLD_XLM ?? "",
+    );
+    this.balanceThresholdXlm = isNaN(parsedThreshold)
+      ? DEFAULT_BALANCE_THRESHOLD_XLM
+      : parsedThreshold;
+  }
 
-        // Start periodic checks
-        this.timer = setInterval(() => {
-            this.checkBalance().catch((err) => {
-                console.error("[GasBalanceMonitor] Background check error:", err);
-            });
-        }, this.checkIntervalMs);
+  /**
+   * Start the background service.
+   */
+  async start(): Promise<void> {
+    if (this.isRunning) {
+      console.warn("[GasBalanceMonitor] Service is already running");
+      return;
     }
 
-    /**
-     * Stop the background service.
-     */
-    stop(): void {
-        if (this.timer) {
-            clearInterval(this.timer);
-            this.timer = null;
-        }
-        this.isRunning = false;
-        this.lastKnownBalance = null; // Reset stale balance on stop
-        console.info("[GasBalanceMonitor] Stopped");
+    // Restore persisted lastAlertTime so rate-limiting survives restarts
+    await this.loadLastAlertTime();
+
+    this.isRunning = true;
+    console.info(
+      `[GasBalanceMonitor] Started with ${this.checkIntervalMs}ms check interval (threshold: ${this.balanceThresholdXlm} XLM)`,
+    );
+
+    // Run immediately on start
+    await this.checkBalance().catch((err) => {
+      console.error("[GasBalanceMonitor] Initial check error:", err);
+    });
+
+    // Start periodic checks
+    this.timer = setInterval(() => {
+      this.checkBalance().catch((err) => {
+        console.error("[GasBalanceMonitor] Background check error:", err);
+      });
+    }, this.checkIntervalMs);
+  }
+
+  /**
+   * Stop the background service.
+   */
+  stop(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
     }
+    this.isRunning = false;
+    this.lastKnownBalance = null; // Reset stale balance on stop
+    console.info("[GasBalanceMonitor] Stopped");
+  }
 
-    /**
-     * Check the admin wallet balance and alert if below threshold.
-     */
-    private async checkBalance(): Promise<void> {
-        try {
-            const account = await this.server.loadAccount(
-                this.adminKeypair.publicKey(),
-            );
+  /**
+   * Check the admin wallet balance and alert if below threshold.
+   */
+  private async checkBalance(): Promise<void> {
+    try {
+      const account = await this.server.loadAccount(
+        this.adminKeypair.publicKey(),
+      );
 
-            // Reset failure counter on success
-            this.consecutiveFailures = 0;
+      // Reset failure counter on success
+      this.consecutiveFailures = 0;
 
-            // XLM balance is always the native balance
-            const xlmBalance = account.balances.find(
-                (balance) => balance.asset_type === "native",
-            );
+      // XLM balance is always the native balance
+      const xlmBalance = account.balances.find(
+        (balance) => balance.asset_type === "native",
+      );
 
-            if (!xlmBalance) {
-                console.warn(
-                    "[GasBalanceMonitor] No native balance (XLM) found for admin account",
-                );
-                return;
-            }
-
-            const balanceAmount = parseFloat(xlmBalance.balance);
-            this.lastKnownBalance = balanceAmount;
-
-            // Only log in debug/dev environments to reduce production noise
-            if (process.env.DEBUG) {
-                console.debug(
-                    `[GasBalanceMonitor] Admin wallet balance: ${balanceAmount} XLM (threshold: ${this.BALANCE_THRESHOLD_XLM} XLM)`,
-                );
-            }
-
-            if (balanceAmount < this.BALANCE_THRESHOLD_XLM) {
-                const timeSinceLastAlert = Date.now() - this.lastAlertTime;
-
-                if (timeSinceLastAlert > MIN_ALERT_INTERVAL_MS) {
-                    await this.sendBalanceAlert(balanceAmount);
-                    this.lastAlertTime = Date.now();
-                    await this.persistLastAlertTime();
-                } else {
-                    console.debug(
-                        `[GasBalanceMonitor] Alert rate-limited (next in ${Math.ceil((MIN_ALERT_INTERVAL_MS - timeSinceLastAlert) / 1000)}s)`,
-                    );
-                }
-            }
-        } catch (error) {
-            this.consecutiveFailures++;
-            console.error(
-                `[GasBalanceMonitor] Error checking balance (failure ${this.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}):`,
-                error,
-            );
-
-            // Escalate after too many consecutive failures — we may be silently missing a low-balance state
-            if (this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                console.error(
-                    `[GasBalanceMonitor] 🚨 ESCALATING: ${this.consecutiveFailures} consecutive failures. Balance state unknown.`,
-                );
-                await this.webhookService
-                    .sendMonitorFailureAlert({
-                        consecutiveFailures: this.consecutiveFailures,
-                        lastKnownBalance: this.lastKnownBalance,
-                        timestamp: new Date(),
-                    })
-                    .catch((err) => {
-                        console.error(
-                            "[GasBalanceMonitor] Failed to send escalation alert:",
-                            err,
-                        );
-                    });
-                // Reset counter after escalation to avoid spamming
-                this.consecutiveFailures = 0;
-            }
-        }
-    }
-
-    /**
-     * Send critical alert webhook notification.
-     */
-    private async sendBalanceAlert(currentBalance: number): Promise<void> {
+      if (!xlmBalance) {
         console.warn(
-            `[GasBalanceMonitor] 🚨 CRITICAL: Admin wallet balance (${currentBalance} XLM) is below threshold (${this.BALANCE_THRESHOLD_XLM} XLM)`,
+          "[GasBalanceMonitor] No native balance (XLM) found for admin account",
         );
+        return;
+      }
 
-        await this.webhookService.sendGasBalanceAlert({
-            currentBalance,
-            threshold: this.BALANCE_THRESHOLD_XLM,
-            // Omit walletAddress from alert payload to avoid surfacing it in external systems
-            timestamp: new Date(),
-        });
-    }
+      const balanceAmount = parseFloat(xlmBalance.balance);
+      this.lastKnownBalance = balanceAmount;
 
-    /**
-     * Persist lastAlertTime to disk so rate-limiting survives process restarts.
-     */
-    private async persistLastAlertTime(): Promise<void> {
-        try {
-            await fs.writeFile(
-                LAST_ALERT_TIME_PATH,
-                JSON.stringify({ lastAlertTime: this.lastAlertTime }),
-                "utf-8",
-            );
-        } catch (err) {
-            console.warn("[GasBalanceMonitor] Failed to persist lastAlertTime:", err);
+      // Only log in debug/dev environments to reduce production noise
+      if (process.env.DEBUG) {
+        console.debug(
+          `[GasBalanceMonitor] Admin wallet balance: ${balanceAmount} XLM (threshold: ${this.balanceThresholdXlm} XLM)`,
+        );
+      }
+
+      if (balanceAmount < this.balanceThresholdXlm) {
+        const timeSinceLastAlert = Date.now() - this.lastAlertTime;
+
+        if (timeSinceLastAlert > MIN_ALERT_INTERVAL_MS) {
+          await this.sendBalanceAlert(balanceAmount);
+          this.lastAlertTime = Date.now();
+          await this.persistLastAlertTime();
+        } else {
+          console.debug(
+            `[GasBalanceMonitor] Alert rate-limited (next in ${Math.ceil((MIN_ALERT_INTERVAL_MS - timeSinceLastAlert) / 1000)}s)`,
+          );
         }
-    }
+      }
+    } catch (error) {
+      this.consecutiveFailures++;
+      console.error(
+        `[GasBalanceMonitor] Error checking balance (failure ${this.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}):`,
+        error,
+      );
 
-    /**
-     * Load persisted lastAlertTime from disk on startup.
-     */
-    private async loadLastAlertTime(): Promise<void> {
-        try {
-            const raw = await fs.readFile(LAST_ALERT_TIME_PATH, "utf-8");
-            const parsed = JSON.parse(raw);
-            if (typeof parsed.lastAlertTime === "number") {
-                this.lastAlertTime = parsed.lastAlertTime;
-                console.info(
-                    `[GasBalanceMonitor] Restored lastAlertTime from disk: ${new Date(this.lastAlertTime).toISOString()}`,
-                );
-            }
-        } catch {
-            // File doesn't exist yet or is unreadable — safe to start fresh
-        }
-    }
-
-    /**
-     * Get service status and current balance.
-     * Note: adminWallet is intentionally omitted to avoid exposing it in monitoring endpoints.
-     */
-    getStatus() {
-        return {
-            isRunning: this.isRunning,
-            checkIntervalMs: this.checkIntervalMs,
-            balanceThresholdXLM: this.BALANCE_THRESHOLD_XLM,
-            lastKnownBalance: this.lastKnownBalance,
+      // Escalate after too many consecutive failures — we may be silently missing a low-balance state
+      if (this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        console.error(
+          `[GasBalanceMonitor] 🚨 ESCALATING: ${this.consecutiveFailures} consecutive failures. Balance state unknown.`,
+        );
+        await this.webhookService
+          .sendMonitorFailureAlert({
             consecutiveFailures: this.consecutiveFailures,
-        };
+            lastKnownBalance: this.lastKnownBalance,
+            timestamp: new Date(),
+          })
+          .catch((err) => {
+            console.error(
+              "[GasBalanceMonitor] Failed to send escalation alert:",
+              err,
+            );
+          });
+        // Reset counter after escalation to avoid spamming
+        this.consecutiveFailures = 0;
+      }
     }
+  }
+
+  /**
+   * Send critical alert webhook notification.
+   */
+  private async sendBalanceAlert(currentBalance: number): Promise<void> {
+    console.warn(
+      `[GasBalanceMonitor] 🚨 CRITICAL: Admin wallet balance (${currentBalance} XLM) is below threshold (${this.balanceThresholdXlm} XLM)`,
+    );
+
+    await this.webhookService.sendGasBalanceAlert({
+      currentBalance,
+      threshold: this.balanceThresholdXlm,
+      // Omit walletAddress from alert payload to avoid surfacing it in external systems
+      timestamp: new Date(),
+    });
+  }
+
+  /**
+   * Persist lastAlertTime to disk so rate-limiting survives process restarts.
+   */
+  private async persistLastAlertTime(): Promise<void> {
+    try {
+      await fs.writeFile(
+        LAST_ALERT_TIME_PATH,
+        JSON.stringify({ lastAlertTime: this.lastAlertTime }),
+        "utf-8",
+      );
+    } catch (err) {
+      console.warn("[GasBalanceMonitor] Failed to persist lastAlertTime:", err);
+    }
+  }
+
+  /**
+   * Load persisted lastAlertTime from disk on startup.
+   */
+  private async loadLastAlertTime(): Promise<void> {
+    try {
+      const raw = await fs.readFile(LAST_ALERT_TIME_PATH, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.lastAlertTime === "number") {
+        this.lastAlertTime = parsed.lastAlertTime;
+        console.info(
+          `[GasBalanceMonitor] Restored lastAlertTime from disk: ${new Date(this.lastAlertTime).toISOString()}`,
+        );
+      }
+    } catch {
+      // File doesn't exist yet or is unreadable — safe to start fresh
+    }
+  }
+
+  /**
+   * Get service status and current balance.
+   * Note: adminWallet is intentionally omitted to avoid exposing it in monitoring endpoints.
+   */
+  getStatus() {
+    return {
+      isRunning: this.isRunning,
+      checkIntervalMs: this.checkIntervalMs,
+      balanceThresholdXLM: this.balanceThresholdXlm,
+      lastKnownBalance: this.lastKnownBalance,
+      consecutiveFailures: this.consecutiveFailures,
+    };
+  }
 }
 
 /**
@@ -255,8 +258,8 @@ export class GasBalanceMonitorService {
 let _instance: GasBalanceMonitorService | null = null;
 
 export function getGasBalanceMonitorService(): GasBalanceMonitorService {
-    if (!_instance) {
-        _instance = new GasBalanceMonitorService();
-    }
-    return _instance;
+  if (!_instance) {
+    _instance = new GasBalanceMonitorService();
+  }
+  return _instance;
 }

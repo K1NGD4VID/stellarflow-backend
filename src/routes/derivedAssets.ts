@@ -39,8 +39,12 @@ router.get(
   "/rate/:base/:quote",
   cacheMiddleware({
     ttl: CACHE_CONFIG.ttl.derivedAssets,
-    keyGenerator: (req) =>
-      CACHE_KEYS.derivedAssets.crossRate(req.params.base, req.params.quote),
+    keyGenerator: (req) => {
+      const base = typeof req.params.base === "string" ? req.params.base : "";
+      const quote =
+        typeof req.params.quote === "string" ? req.params.quote : "";
+      return CACHE_KEYS.derivedAssets.crossRate(base, quote);
+    },
   }),
   getDerivedRate,
 );

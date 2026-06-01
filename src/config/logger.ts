@@ -1,34 +1,25 @@
-import winston from 'winston';
+import winston from "winston";
 
-import { HttpLogTransport }
-  from '../transports/httpLogTransport';
+import { HttpLogTransport } from "../transport/httpLogTransport";
 
-const transports = [
-  new winston.transports.Console(),
-];
+const transports: winston.transport[] = [new winston.transports.Console()];
 
-if (
-  process.env
-    .LOG_STREAM_ENABLED ===
-  'true'
-) {
+if (process.env.LOG_STREAM_ENABLED === "true") {
   transports.push(
     new HttpLogTransport({
-      level: 'info',
+      level: "info",
     }),
   );
 }
 
-export const logger =
-  winston.createLogger({
-    level: 'info',
+export const logger = winston.createLogger({
+  level: "info",
 
-    format:
-      winston.format.combine(
-        winston.format.timestamp(),
+  format: winston.format.combine(
+    winston.format.timestamp(),
 
-        winston.format.json(),
-      ),
+    winston.format.json(),
+  ),
 
-    transports,
-  });
+  transports,
+});

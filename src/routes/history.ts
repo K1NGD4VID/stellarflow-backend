@@ -79,86 +79,100 @@ router.get(
   cacheMiddleware({
     ttl: CACHE_CONFIG.ttl.history,
     keyGenerator: (req) => {
-      const asset = req.params.asset.toUpperCase();
+      const rawAsset = req.params.asset;
+      const asset = typeof rawAsset === "string" ? rawAsset.toUpperCase() : "";
       const range = (req.query.range as string) || "7d";
       return CACHE_KEYS.history.asset(asset, range);
     },
   }),
   async (req, res) => {
-  const asset = req.params.asset.toUpperCase();
-  const rangeParam = req.query.range as string;
-  const fromParam = req.query.from as string;
-  const toParam = req.query.to as string;
+    const rawAsset = req.params.asset;
+    const asset = typeof rawAsset === "string" ? rawAsset.toUpperCase() : "";
+    const rangeParam = req.query.range as string;
+    const fromParam = req.query.from as string;
+    const toParam = req.query.to as string;
 
-  let since: Date | undefined;
-  let until: Date | undefined;
+    let since: Date | undefined;
+    let until: Date | undefined;
 
-  if (fromParam || toParam) {
-    if (fromParam) {
-      since = new Date(fromParam);
-      if (isNaN(since.getTime())) {
-        sendApiError(res, 400, "BAD_REQUEST", "Invalid 'from' date");
+    if (fromParam || toParam) {
+      if (fromParam) {
+        since = new Date(fromParam);
+        if (isNaN(since.getTime())) {
+          sendApiError(res, 400, "BAD_REQUEST", "Invalid 'from' date");
+          return;
+        }
+      }
+      if (toParam) {
+        until = new Date(toParam);
+        if (isNaN(until.getTime())) {
+          sendApiError(res, 400, "BAD_REQUEST", "Invalid 'to' date");
+          return;
+        }
+      }
+    } else {
+      const range = rangeParam ?? "7d";
+      const days = RANGE_MAP[range];
+      if (!days) {
+        res.status(400).json({
+          success: false,
+          error: `Invalid range. Supported values: ${Object.keys(RANGE_MAP).join(", ")}`,
+        });
         return;
       }
+      since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     }
-    if (toParam) {
-      until = new Date(toParam);
-      if (isNaN(until.getTime())) {
-        sendApiError(res, 400, "BAD_REQUEST", "Invalid 'to' date");
+
+    try {
+      const where: any = {
+        currency: asset,
+        timestamp: {},
+      };
+
+      if (since) where.timestamp.gte = since;
+      if (until) where.timestamp.lte = until;
+
+      const rows = await prisma.priceHistory.findMany({
+        where,
+        orderBy: { timestamp: "asc" },
+        select: { timestamp: true, rate: true, source: true },
+      });
+
+      if (rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: `No history found for ${asset} in the specified timeframe`,
+        });
         return;
       }
-    }
-  } else {
-    const range = rangeParam ?? "7d";
-    const days = RANGE_MAP[range];
-    if (!days) {
-      res.status(400).json({
-        success: false,
-        error: `Invalid range. Supported values: ${Object.keys(RANGE_MAP).join(", ")}`,
+
+      res.json({
+        success: true,
+        asset,
+        range: rangeParam || "custom",
+        data: rows.map(
+          (r: { timestamp: Date; rate: unknown; source: string }) => ({
+            timestamp: r.timestamp.toISOString(),
+            rate: Number(r.rate),
+            source: r.source,
+          }),
+        ),
       });
-      return;
+    } catch (error) {
+      sendApiError(
+        res,
+        500,
+        "INTERNAL_SERVER_ERROR",
+        typeof (error instanceof Error
+          ? error.message
+          : "Internal server error") === "string"
+          ? String(
+              error instanceof Error ? error.message : "Internal server error",
+            )
+          : undefined,
+      );
     }
-    since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  }
-
-  try {
-    const where: any = {
-      currency: asset,
-      timestamp: {},
-    };
-
-    if (since) where.timestamp.gte = since;
-    if (until) where.timestamp.lte = until;
-
-    const rows = await prisma.priceHistory.findMany({
-      where,
-      orderBy: { timestamp: "asc" },
-      select: { timestamp: true, rate: true, source: true },
-    });
-
-    if (rows.length === 0) {
-      res.status(404).json({
-        success: false,
-        error: `No history found for ${asset} in the specified timeframe`,
-      });
-      return;
-    }
-
-    res.json({
-      success: true,
-      asset,
-      range: rangeParam || "custom",
-      data: rows.map(
-        (r: { timestamp: Date; rate: unknown; source: string }) => ({
-          timestamp: r.timestamp.toISOString(),
-          rate: Number(r.rate),
-          source: r.source,
-        }),
-      ),
-    });
-  } catch (error) {
-    sendApiError(res, 500, "INTERNAL_SERVER_ERROR", typeof (error instanceof Error ? error.message : "Internal server error") === "string" ? String(error instanceof Error ? error.message : "Internal server error") : undefined);
-  }
-});
+  },
+);
 
 export default router;

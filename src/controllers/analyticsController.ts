@@ -132,7 +132,12 @@ export async function getOhlcCandles(
     const upperCurrency = currency.toUpperCase();
 
     if (!granularity || typeof granularity !== "string") {
-      sendApiError(res, 400, "BAD_REQUEST", "Query parameter `granularity` is required. Valid values: MINUTE | HOUR | DAY.");
+      sendApiError(
+        res,
+        400,
+        "BAD_REQUEST",
+        "Query parameter `granularity` is required. Valid values: MINUTE | HOUR | DAY.",
+      );
       return;
     }
 
@@ -150,7 +155,12 @@ export async function getOhlcCandles(
 
     const toDate = to ? new Date(to as string) : now;
     if (isNaN(toDate.getTime())) {
-      sendApiError(res, 400, "BAD_REQUEST", "Invalid `to` date. Use ISO-8601 format.");
+      sendApiError(
+        res,
+        400,
+        "BAD_REQUEST",
+        "Invalid `to` date. Use ISO-8601 format.",
+      );
       return;
     }
 
@@ -158,12 +168,22 @@ export async function getOhlcCandles(
       ? new Date(from as string)
       : new Date(toDate.getTime() - defaultLookback);
     if (isNaN(fromDate.getTime())) {
-      sendApiError(res, 400, "BAD_REQUEST", "Invalid `from` date. Use ISO-8601 format.");
+      sendApiError(
+        res,
+        400,
+        "BAD_REQUEST",
+        "Invalid `from` date. Use ISO-8601 format.",
+      );
       return;
     }
 
     if (fromDate >= toDate) {
-      sendApiError(res, 400, "BAD_REQUEST", "`from` must be earlier than `to`.");
+      sendApiError(
+        res,
+        400,
+        "BAD_REQUEST",
+        "`from` must be earlier than `to`.",
+      );
       return;
     }
 
@@ -171,7 +191,12 @@ export async function getOhlcCandles(
     if (limitParam !== undefined) {
       const parsed = parseInt(limitParam as string, 10);
       if (isNaN(parsed) || parsed < 1) {
-        sendApiError(res, 400, "BAD_REQUEST", "`limit` must be a positive integer.");
+        sendApiError(
+          res,
+          400,
+          "BAD_REQUEST",
+          "`limit` must be a positive integer.",
+        );
         return;
       }
       limit = Math.min(parsed, MAX_LIMIT);
@@ -180,32 +205,33 @@ export async function getOhlcCandles(
     // ------------------------------------------------------------------
     // 2. Query OhlcCandle table
     // ------------------------------------------------------------------
-    const candles = (await prisma.ohlcCandle.findMany({
-      where: {
-        currency: upperCurrency,
-        granularity: upperGranularity,
-        openTime: {
-          gte: fromDate,
-          lt: toDate,
+    const candles =
+      (await prisma.ohlcCandle.findMany({
+        where: {
+          currency: upperCurrency,
+          granularity: upperGranularity,
+          openTime: {
+            gte: fromDate,
+            lt: toDate,
+          },
         },
-      },
-      orderBy: { openTime: "asc" },
-      take: limit,
-      select: {
-        openTime: true,
-        closeTime: true,
-        open: true,
-        high: true,
-        low: true,
-        close: true,
-        count: true,
-      },
-    })) || [];
+        orderBy: { openTime: "asc" },
+        take: limit,
+        select: {
+          openTime: true,
+          closeTime: true,
+          open: true,
+          high: true,
+          low: true,
+          close: true,
+          count: true,
+        },
+      })) || [];
 
     // ------------------------------------------------------------------
     // 3. Serialise (Decimal → string for wire safety)
     // ------------------------------------------------------------------
-    const serialised = candles.map((c) => ({
+    const serialised = candles.map((c: any) => ({
       openTime: c.openTime.toISOString(),
       closeTime: c.closeTime.toISOString(),
       open: c.open.toString(),
@@ -228,6 +254,17 @@ export async function getOhlcCandles(
     });
   } catch (error) {
     console.error("[AnalyticsController] getOhlcCandles error:", error);
-    sendApiError(res, 500, "INTERNAL_SERVER_ERROR", typeof (error instanceof Error ? error.message : "Internal server error") === "string" ? String(error instanceof Error ? error.message : "Internal server error") : undefined);
+    sendApiError(
+      res,
+      500,
+      "INTERNAL_SERVER_ERROR",
+      typeof (error instanceof Error
+        ? error.message
+        : "Internal server error") === "string"
+        ? String(
+            error instanceof Error ? error.message : "Internal server error",
+          )
+        : undefined,
+    );
   }
 }

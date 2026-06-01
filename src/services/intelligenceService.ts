@@ -140,13 +140,16 @@ export class IntelligenceService {
       windowEnd.getTime() - HOURLY_VOLATILITY_WINDOW_MINUTES * 60 * 1000,
     );
 
-    const activeCurrencies = (await this.db.currency.findMany({
-      where: { isActive: true },
-      select: { code: true },
-      orderBy: { code: "asc" },
-    })) || [];
+    const activeCurrencies =
+      (await this.db.currency.findMany({
+        where: { isActive: true },
+        select: { code: true },
+        orderBy: { code: "asc" },
+      })) || [];
 
-    const currencyCodes = activeCurrencies.map((currency) => currency.code);
+    const currencyCodes = activeCurrencies.map(
+      (currency: any) => currency.code,
+    );
 
     if (currencyCodes.length === 0) {
       return {
@@ -158,23 +161,24 @@ export class IntelligenceService {
       };
     }
 
-    const recentPrices = (await this.db.priceHistory.findMany({
-      where: {
-        currency: {
-          in: currencyCodes,
+    const recentPrices =
+      (await this.db.priceHistory.findMany({
+        where: {
+          currency: {
+            in: currencyCodes,
+          },
+          timestamp: {
+            gte: windowStart,
+            lte: windowEnd,
+          },
         },
-        timestamp: {
-          gte: windowStart,
-          lte: windowEnd,
+        orderBy: [{ currency: "asc" }, { timestamp: "asc" }],
+        select: {
+          currency: true,
+          rate: true,
+          timestamp: true,
         },
-      },
-      orderBy: [{ currency: "asc" }, { timestamp: "asc" }],
-      select: {
-        currency: true,
-        rate: true,
-        timestamp: true,
-      },
-    })) || [];
+      })) || [];
 
     const groupedRates = new Map<
       string,
@@ -190,7 +194,7 @@ export class IntelligenceService {
       groupedRates.set(row.currency, entries);
     }
 
-    const currencies = currencyCodes.map((currency) => {
+    const currencies = currencyCodes.map((currency: any) => {
       const samples = groupedRates.get(currency) ?? [];
       const latestSample = samples.at(-1) ?? null;
       const rates = samples.map((sample) => sample.rate);

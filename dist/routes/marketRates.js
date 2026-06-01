@@ -10,7 +10,10 @@ const router = Router();
 // Get rate for specific currency
 router.get("/rate/:currency", cacheMiddleware({
     ttl: CACHE_CONFIG.ttl.marketRates,
-    keyGenerator: (req) => CACHE_KEYS.marketRates.single(req.params.currency),
+    keyGenerator: (req) => {
+        const currency = typeof req.params.currency === "string" ? req.params.currency : "";
+        return CACHE_KEYS.marketRates.single(currency);
+    },
 }), getRate);
 // Get all available rates
 router.get("/rates", cacheMiddleware({
@@ -59,7 +62,8 @@ router.get("/reviews/pending", cacheMiddleware({
 // Approve review
 router.post("/reviews/:id/approve", invalidateCache("market-rates:*"), async (req, res) => {
     try {
-        const reviewId = Number.parseInt(req.params.id, 10);
+        const rawId = req.params.id;
+        const reviewId = typeof rawId === "string" ? Number.parseInt(rawId, 10) : NaN;
         if (!Number.isFinite(reviewId)) {
             sendApiError(res, 400, "BAD_REQUEST", "Review ID must be a valid number");
             return;
@@ -73,13 +77,14 @@ router.post("/reviews/:id/approve", invalidateCache("market-rates:*"), async (re
     }
     catch (error) {
         const status = isLockdownError(error) ? error.statusCode : 500;
-        sendApiError(res, status, status === 403 ? "LOCKDOWN_ACTIVE" : "INTERNAL_SERVER_ERROR", error instanceof Error ? error.message : "Failed to approve price review");
+        sendApiError(res, status, status === 423 ? "LOCKDOWN_ACTIVE" : "INTERNAL_SERVER_ERROR", error instanceof Error ? error.message : "Failed to approve price review");
     }
 });
 // Reject review
 router.post("/reviews/:id/reject", invalidateCache("market-rates:*"), async (req, res) => {
     try {
-        const reviewId = Number.parseInt(req.params.id, 10);
+        const rawId = req.params.id;
+        const reviewId = typeof rawId === "string" ? Number.parseInt(rawId, 10) : NaN;
         if (!Number.isFinite(reviewId)) {
             sendApiError(res, 400, "BAD_REQUEST", "Review ID must be a valid number");
             return;

@@ -114,7 +114,7 @@ router.get("/volume", cacheMiddleware({
         const dateParam = req.query.date;
         const targetDate = dateParam ? new Date(dateParam) : new Date();
         const dateStr = targetDate.toISOString().split("T")[0];
-        return CACHE_KEYS.stats.volume(dateStr);
+        return CACHE_KEYS.stats.volume(dateStr || "");
     },
 }), async (req, res) => {
     try {

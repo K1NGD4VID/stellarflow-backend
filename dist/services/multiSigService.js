@@ -3,17 +3,17 @@ import { signer } from "../signer";
 import dotenv from "dotenv";
 import axios from "axios";
 import { assertSigningAllowed } from "../state/appState";
-import { successfulSubmissions, failedSubmissions, gasUsagePerAsset, submissionDuration, } from "../metrics";
+import { successfulSubmissions, failedSubmissions, gasUsagePerAsset, submissionDuration, } from "../middleware/metrics";
 dotenv.config();
 export class MultiSigService {
     localSignerPublicKey = "";
     signerName;
-    SIGNATURE_EXPIRY_MS = 60 * 60 * 1000;
-    REQUIRED_SIGNATURES;
+    signatureExpiryMs = 60 * 60 * 1000;
+    requiredSignatures;
     constructor() {
         this.signerName = process.env.ORACLE_SIGNER_NAME || "oracle-server";
         const requiredSignatures = Number.parseInt(process.env.MULTI_SIG_REQUIRED_COUNT || "2", 10);
-        this.REQUIRED_SIGNATURES =
+        this.requiredSignatures =
             Number.isFinite(requiredSignatures) && requiredSignatures > 0
                 ? requiredSignatures
                 : 2;
@@ -23,7 +23,7 @@ export class MultiSigService {
         this.localSignerPublicKey = await signer.getPublicKey();
     }
     async createMultiSigRequest(priceReviewId, currency, rate, source, memoId) {
-        const expiresAt = new Date(Date.now() + this.SIGNATURE_EXPIRY_MS);
+        const expiresAt = new Date(Date.now() + this.signatureExpiryMs);
         const created = await prisma.multiSigPrice.create({
             data: {
                 priceReviewId,
@@ -32,7 +32,7 @@ export class MultiSigService {
                 source,
                 memoId,
                 status: "PENDING",
-                requiredSignatures: this.REQUIRED_SIGNATURES,
+                requiredSignatures: this.requiredSignatures,
                 collectedSignatures: 0,
                 expiresAt,
             },
@@ -44,7 +44,7 @@ export class MultiSigService {
             rate,
             source,
             memoId,
-            requiredSignatures: this.REQUIRED_SIGNATURES,
+            requiredSignatures: this.requiredSignatures,
         };
     }
     async signMultiSigPrice(multiSigPriceId) {

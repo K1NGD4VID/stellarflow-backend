@@ -201,7 +201,7 @@ export class NGNRateFetcher {
         }
         if (prices.length === 0) {
             const error = new Error("All NGN rate sources failed");
-            this.logger.fetcherError(error, "All price sources failed - no rates obtained", { attemptedSources: 3, pricesLength: prices.length });
+            this.logger.fetcherError("All price sources failed - no rates obtained", { error: error.message, attemptedSources: 3, pricesLength: prices.length });
             throw error;
         }
         const rateValues = prices
